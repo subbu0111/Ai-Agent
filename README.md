@@ -1,4 +1,4 @@
-# Telegram AI Agent Bot (OpenClaw-style)
+# AI Agent Bot connect via Telegram 
 
 ## Setup
 1. Copy `.env.example` to `.env` and fill in:

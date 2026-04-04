@@ -8,6 +8,7 @@ from openai import OpenAI
 import json
 import sqlite3
 from duckduckgo_search import DDGS
+from sympy import sympify, SympifyError
 
 # Load environment variables
 load_dotenv()
@@ -142,10 +143,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     elif function_name == "calculator":
                         expression = function_args["expression"]
                         try:
-                            result = eval(expression, {"__builtins__": {}})
+                            result = sympify(expression).evalf()
                             tool_response = f"Result: {result}"
+                        except SympifyError as e:
+                            tool_response = f"Invalid math: {str(e)}. Examples: 2+3*sin(pi/2), sqrt(16)."
                         except Exception as calc_err:
-                            tool_response = f"Calc error: {str(calc_err)}. Use simple math."
+                            tool_response = f"Calc error: {str(calc_err)}."
                     else:
                         tool_response = "Unknown tool"
                     tool_response_msg = {

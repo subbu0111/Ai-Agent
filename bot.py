@@ -19,9 +19,11 @@ MODEL = os.getenv('MODEL', 'x-ai/grok-4.1-fast')
 
 SYSTEM_PROMPT = """You are a highly intelligent personal AI agent powered by Grok. Think step-by-step before responding. 
 
-CRITICAL: For ANY news, current events, weather, stocks, sports scores, facts that change over time, or real-time data, ALWAYS use web_search FIRST. Never rely on your training data or guess dates/prices/events. Summarize top recent results concisely.
+CRITICAL: For ANY news, current events, weather, stocks, sports scores, facts that change over time, or real-time data, ALWAYS use web_search FIRST. Never rely on your training data or guess dates/prices/events. Use get_current_datetime tool to get the precise current date and time.
 
-Use tools when needed for current information (web_search) or calculations (calculator). Be helpful, concise, accurate, and proactive."""
+Summarize top recent results concisely.
+
+Use tools when needed for current information (web_search), date/time (get_current_datetime), or calculations (calculator). Be helpful, concise, accurate, and proactive."""
 
 if not TELEGRAM_TOKEN or not OPENROUTER_API_KEY:
     raise ValueError("Missing TELEGRAM_TOKEN or OPENROUTER_API_KEY in .env")
@@ -112,10 +114,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     "required": ["expression"]
                 }
             }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_current_datetime",
+                "description": "Get the current date and time in UTC. Use this tool whenever you need to know the current date or time.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            }
         }
     ]
-
-    max_retries = 3
 
     max_retries = 3
     ai_msg = None
@@ -149,6 +161,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                             tool_response = f"Invalid math: {str(e)}. Examples: 2+3*sin(pi/2), sqrt(16)."
                         except Exception as calc_err:
                             tool_response = f"Calc error: {str(calc_err)}."
+                    elif function_name == "get_current_datetime":
+                        import datetime
+                        now = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+                        tool_response = f"Current date and time (UTC): {now}"
                     else:
                         tool_response = "Unknown tool"
                     tool_response_msg = {

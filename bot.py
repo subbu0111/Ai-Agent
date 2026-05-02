@@ -3,10 +3,9 @@ from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTyp
 import asyncio
 
 from config import TELEGRAM_TOKEN, ALLOWED_USER_IDS
-from ai_client import ask_ai
+from ai_client import ask_ai_natural
 from tasks.reminder import set_reminder
 from tasks.executor import run_command
-from tools.realtime import get_crypto_price, get_stock_price
 from tasks.realtime_monitor import track_asset
 
 
@@ -50,29 +49,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Failed to set reminder")
         return
 
-    # 🔥 CRYPTO
-    if "bitcoin" in text:
-        data = get_crypto_price("bitcoin")
-        await update.message.reply_text(safe_reply(data))
-        return
-
-    if "ethereum" in text:
-        data = get_crypto_price("ethereum")
-        await update.message.reply_text(safe_reply(data))
-        return
-
-    # 📊 NIFTY / BANKNIFTY (FIXED HERE)
-    if "bank" in text and "nifty" in text:
-        data = get_stock_price("^NSEBANK")
-        await update.message.reply_text(safe_reply(data))
-        return
-
-    if "nifty" in text:
-        data = get_stock_price("^NSEI")
-        await update.message.reply_text(safe_reply(data))
-        return
-
-    # 📡 TRACKING
+    # � TRACKING (keep special)
     if "track" in text:
         if "bitcoin" in text:
             asset = "bitcoin"
@@ -91,9 +68,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"📡 Tracking {asset}")
         return
 
-    # 🧠 AI fallback
+    # 🧠 Natural AI (handles prices/news/date/stocks naturally)
     await update.message.reply_text("🤖 Thinking...")
-    reply = ask_ai(text)
+    reply = ask_ai_natural(update.message.text)  # Use original text (not lower)
     await update.message.reply_text(safe_reply(reply))
 
 

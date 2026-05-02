@@ -37,3 +37,28 @@ def get_stock_price(symbol):
         return f"{symbol} Price: {price}"
     except Exception:
         return "❌ Failed to fetch stock price"
+
+
+def get_stock_news(symbol):
+    try:
+        ticker = yf.Ticker(symbol)
+        news_items = [item for item in ticker.news[:5] if item.get('title', '').strip() and item.get('link', '').strip()]
+        if not news_items:
+            return ""
+        output = "📈 Yahoo Finance News:\n"
+        for item in news_items:
+            title = item.get('title', 'No title')
+            link = item.get('link', '')
+            publisher = item.get('publisher', 'Yahoo')
+            summary = item.get('summary', '')[:200] + '...' if len(item.get('summary', '')) > 200 else item.get('summary', '')
+            output += f"• {title} ({publisher})\n  🔗 {link}\n  {summary}\n\n"
+        return output
+    except Exception:
+        return ""
+        return ""
+        price = info.get('regularMarketPrice') or info.get('currentPrice')
+        if price is None:
+            return "❌ Market closed or data unavailable"
+        return f"{symbol} Price: {price}"
+    except Exception:
+        return "❌ Failed to fetch stock price"

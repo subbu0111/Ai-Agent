@@ -7,6 +7,16 @@ from ai_client import ask_ai_natural
 from tasks.reminder import set_reminder
 from tasks.executor import run_command
 from tasks.realtime_monitor import track_asset
+import tasks.alerts as alerts
+from ai_client import STOCK_MAP
+chat_history = {}  # Short-term: per-user messages
+
+async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not check_access(update):
+        return
+    await update.message.reply_text("🔊 Voice received! Transcription coming soon (add WHISPER_KEY). 📝")
+
+
 
 
 def check_access(update):
@@ -27,6 +37,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print("Incoming:", text)
 
     # ⚙️ RUN COMMAND
+    if text.startswith("alert "):
+        # alert INFY.NS 1200
+        parts = text.replace("alert ", "").split()
+        if len(parts) == 2:
+            asset, thresh = parts
+            asyncio.create_task(alerts.monitor_price(asset, float(thresh), context, update.effective_chat.id))
+            await update.message.reply_text(f"🔔 Alert set for {asset} at ₹{thresh}")
+        return
     if text.startswith("run "):
         cmd = text.replace("run ", "")
         output = run_command(cmd)
@@ -68,14 +86,115 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"📡 Tracking {asset}")
         return
 
-    # 🧠 Natural AI (handles prices/news/date/stocks naturally)
-    await update.message.reply_text("🤖 Thinking...")
-    reply = ask_ai_natural(update.message.text)  # Use original text (not lower)
-    await update.message.reply_text(safe_reply(reply))
+    # 🧠 JARVIS Natural AI w/ Memory
+    await update.message.reply_text("🤖 Sky thinking... 😊")
+    text_lower = update.message.text.lower()
+    if any(g in text_lower for g in ['hello', 'hi', 'hey', 'good morning', 'good evening']):
+        await update.message.reply_text("Hey! 👋 Sky here, your stock/crypto buddy. Ask about prices, deals, charts, or track assets! 🚀")
+        return
+
+    # 📊 CHARTS
+    if any(word in text_lower for word in ['chart', 'graph', 'plot']):
+        from tools.charts import generate_chart
+        symbol_name = None
+        for name in STOCK_MAP:
+            if name in text_lower:
+                symbol_name = name
+                break
+        symbol = STOCK_MAP.get(symbol_name, 'INFY.NS')
+        import re
+        # Interval parse
+        int_match = re.search(r'(\d+)\s*(minutes?|min|hours?|h|days?|d)', text_lower, re.I)
+        interval = '1d'
+        if int_match:
+            num = int(int_match.group(1))
+            unit = int_match.group(2).lower()
+            if 'min' in unit or 'minute' in unit:
+                if num <= 1:
+                    interval = '1m'
+                elif num <= 5:
+                    interval = f'{num}m'
+                elif num <= 30:
+                    interval = f'{num}m'
+                elif num <= 60:
+                    interval = '1h'
+            elif 'hour' in unit or 'h' in unit:
+                interval = '1h'
+            elif 'day' in unit or 'd' in unit:
+                interval = '1d'
+
+        # Period parse (existing + days/weeks)
+        period_map = {
+            '1d': '1d', 'daily': '1d', 'day': '1d',
+            '5d': '5d', 'week': '5d', '1 week': '5d',
+            '1mo': '1mo', 'month': '1mo',
+            '2mo': '2mo', '2 months': '2mo',
+            '3mo': '3mo', '3 months': '3mo',
+            '6mo': '6mo', '6 months': '6mo',
+            '1y': '1y', 'year': '1y', '12mo': '1y',
+            '2y': '2y', 'ytd': 'ytd', 'max': 'max'
+        }
+        period_words = text_lower.split()
+        period = '1mo'
+        for p in period_words:
+            if p in period_map:
+                period = period_map[p]
+                break
+        # Default short period for intraday
+        if interval != '1d':
+            if 'mo' in period or period == '1mo':
+                period = '5d'
+        # Num days/months
+        day_match = re.search(r'(\d+)\s*(day|days?|week|weeks?)(?:s?)', text_lower, re.I)
+        if day_match:
+            num = int(day_match.group(1))
+            unit = day_match.group(2).lower()
+            if unit.startswith('day'):
+                period = f'{min(num,60)}d'  # Max 60d intraday
+            elif unit.startswith('week'):
+                period = f'{min(num*5,60)}d'
+        mo_match = re.search(r'(\d+)\s*(mo|month|months?)(?:s?)', text_lower, re.I)
+        if mo_match:
+            num_mo = int(mo_match.group(1))
+            if num_mo == 1:
+                period = '1mo'
+            elif num_mo <= 3:
+                period = f'{num_mo}mo'
+            elif num_mo <= 6:
+                period = '6mo'
+            elif num_mo <= 12:
+                period = '1y'
+            else:
+                period = '2y'
+        buffer = generate_chart(symbol, period, interval)
+        if buffer:
+            await update.message.reply_photo(photo=buffer, caption=f"📊 {symbol} {period.upper()} ({interval}) - IST Chart")
+        else:
+            await update.message.reply_text(f"❌ Chart failed for {symbol} {period} ({interval})")
+        return
+
+    user_id = update.effective_user.id
+    if user_id not in chat_history:
+        chat_history[user_id] = []
+    chat_history[user_id].append({"role": "user", "content": update.message.text})
+    if len(chat_history[user_id]) > 10:
+        chat_history[user_id] = chat_history[user_id][-10:]  # Short-term limit
+    result = ask_ai_natural(update.message.text, chat_history[user_id])
+    chat_history[user_id].append({"role": "assistant", "content": str(result)})
+    if isinstance(result, tuple) and result[0] == 'chart_buffer':
+        await update.message.reply_photo(photo=result[1], caption="📊 Live Chart")
+    else:
+        await update.message.reply_text(safe_reply(result))
 
 
 app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+app.add_handler(MessageHandler(filters.VOICE, handle_voice))  # Voice stub
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-print("🚀 STABLE REAL-TIME BOT RUNNING...")
+async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not check_access(update):
+        return
+    await update.message.reply_text("🔊 Voice received! Transcription coming soon (add WHISPER_KEY). 📝")
+
+print("🚀 ELITE BOT w/ Voice/Alerts/UI READY!")
 app.run_polling()

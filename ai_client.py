@@ -2,6 +2,7 @@ import requests
 from config import OPENROUTER_API_KEY, MODEL
 from tools.realtime import get_crypto_price, get_stock_price
 from tools.search import get_news, get_date, search_web
+from nifty500 import NIFTY500_MAP
 
 import re
 
@@ -28,20 +29,7 @@ def ask_ai(prompt):
     except Exception as e:
         return f"AI Error: {str(e)}"
 
-STOCK_MAP = {
-    'infosys': 'INFY.NS',
-    'tcs': 'TCS.NS',
-    'reliance': 'RELIANCE.NS',
-    'hdfc': 'HDFCBANK.NS',
-    'icici': 'ICICIBANK.NS',
-    'wipro': 'WIPRO.NS',
-    'hcl': 'HCLTECH.NS',
-    'lt': 'LT.NS',
-    'asianpaint': 'ASIANPAINT.NS',
-    'titan': 'TITAN.NS'
-}
-
-STOCK_NAMES = {v: k.title() for k, v in STOCK_MAP.items()}
+STOCK_NAMES = {v: k.title() for k, v in NIFTY500_MAP.items()}
 
 def ask_ai_natural(user_input, history=None):
     context = f"CONTEXT: Date/Time: {get_date()}. "
@@ -57,10 +45,12 @@ def ask_ai_natural(user_input, history=None):
         context += f"\nRecent chat: {history_str}"  # Short-term memory
     
     text_lower = user_input.lower()
+    words = [w.lower() for w in text_lower.split()]
     
     # ONLY fetch if stock/crypto explicit
-    stock_keywords = list(STOCK_MAP.keys()) + ['bitcoin', 'btc', 'ethereum', 'eth', 'nifty', 'banknifty', 'nse']
-    if any(kw in text_lower for kw in stock_keywords):
+    short_company_names = [name.split()[0].lower() for name in NIFTY500_MAP]
+    stock_keywords = [s for s in short_company_names if len(s) >= 3] + ['bitcoin', 'btc', 'ethereum', 'eth', 'nifty', 'banknifty', 'nse']
+    if any(kw in words for kw in stock_keywords):
         # Auto-fetch prices
         if any(s in text_lower for s in ['nifty', 'banknifty', 'nse']):
             context += get_stock_price('^NSEI') + '. BankNifty: ' + get_stock_price('^NSEBANK') + '. '
@@ -70,8 +60,9 @@ def ask_ai_natural(user_input, history=None):
         context += get_crypto_price('ethereum') + '. '
     
     # NSE stocks from map or uppercase tickers
-    for name, ticker in STOCK_MAP.items():
-        if name in text_lower:
+    for name, ticker in NIFTY500_MAP.items():
+        short_name = name.split()[0].lower()
+        if short_name in words:
             price = get_stock_price(ticker)
             context += f'{ticker}: {price}. '
     

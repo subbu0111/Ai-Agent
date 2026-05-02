@@ -8,7 +8,6 @@ from tasks.reminder import set_reminder
 from tasks.executor import run_command
 from tasks.realtime_monitor import track_asset
 import tasks.alerts as alerts
-from ai_client import STOCK_MAP
 chat_history = {}  # Short-term: per-user messages
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -96,12 +95,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 📊 CHARTS
     if any(word in text_lower for word in ['chart', 'graph', 'plot']):
         from tools.charts import generate_chart
+        from nifty500 import NIFTY500_MAP
+        words = [w.lower() for w in text_lower.split()]
         symbol_name = None
-        for name in STOCK_MAP:
-            if name in text_lower:
+        for name in NIFTY500_MAP:
+            short_name = name.split()[0].lower()
+            if short_name in words:
                 symbol_name = name
                 break
-        symbol = STOCK_MAP.get(symbol_name, 'INFY.NS')
+        symbol = NIFTY500_MAP.get(symbol_name, '^NSEI')
         import re
         # Interval parse
         int_match = re.search(r'(\d+)\s*(minutes?|min|hours?|h|days?|d)', text_lower, re.I)

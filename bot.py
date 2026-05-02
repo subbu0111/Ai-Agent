@@ -110,12 +110,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             num = int(int_match.group(1))
             unit = int_match.group(2).lower()
             if 'min' in unit or 'minute' in unit:
-                if num <= 1:
+                if num == 1:
                     interval = '1m'
+                elif num == 2:
+                    interval = '2m'
                 elif num <= 5:
-                    interval = f'{num}m'
+                    interval = '5m'
+                elif num == 10:
+                    interval = '15m'  # No 10m, closest
+                elif num <= 15:
+                    interval = '15m'
                 elif num <= 30:
-                    interval = f'{num}m'
+                    interval = '30m'
                 elif num <= 60:
                     interval = '1h'
             elif 'hour' in unit or 'h' in unit:
@@ -146,13 +152,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 period = '5d'
         # Num days/months
         day_match = re.search(r'(\d+)\s*(day|days?|week|weeks?)(?:s?)', text_lower, re.I)
+        target_days = None
         if day_match:
             num = int(day_match.group(1))
             unit = day_match.group(2).lower()
             if unit.startswith('day'):
-                period = f'{min(num,60)}d'  # Max 60d intraday
+                target_days = num
             elif unit.startswith('week'):
-                period = f'{min(num*5,60)}d'
+                target_days = num * 5  # Approx trading days
+        # ... (keep existing period logic)
         mo_match = re.search(r'(\d+)\s*(mo|month|months?)(?:s?)', text_lower, re.I)
         if mo_match:
             num_mo = int(mo_match.group(1))
@@ -166,11 +174,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 period = '1y'
             else:
                 period = '2y'
-        buffer = generate_chart(symbol, period, interval)
+        buffer = generate_chart(symbol, period, interval, target_trading_days=target_days)
         if buffer:
-            await update.message.reply_photo(photo=buffer, caption=f"📊 {symbol} {period.upper()} ({interval}) - IST Chart")
+            caption = f"📊 {symbol} {period.upper()} ({interval}) - Last {target_days or ''} Trading Days IST"
+            await update.message.reply_photo(photo=buffer, caption=caption)
         else:
-            await update.message.reply_text(f"❌ Chart failed for {symbol} {period} ({interval})")
+            await update.message.reply_photo(photo=buffer, caption=f"❌ Chart failed for {symbol} {period} ({interval})")
         return
 
     user_id = update.effective_user.id

@@ -1,5 +1,4 @@
 from duckduckgo_search import DDGS
-from ai_client import ask_ai
 from datetime import datetime
 
 def search_web(query):
@@ -8,7 +7,7 @@ def search_web(query):
             results = list(ddgs.text(query, max_results=3))
 
         if not results:
-            return ask_ai(f"Give latest info about: {query}")
+            return "No web results found."
 
         output = ""
         for r in results:
@@ -17,7 +16,7 @@ def search_web(query):
         return output
 
     except Exception as e:
-        return ask_ai(f"Give latest info about: {query}")
+        return "❌ Search unavailable"
 
 
 def get_news(query):

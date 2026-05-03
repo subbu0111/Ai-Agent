@@ -28,15 +28,22 @@ def generate_chart(symbol, period='1mo', interval='1d', target_trading_days=None
         else:
             data.index = data.index.tz_convert(ist_tz)
 
-        # Strict NSE Trading Hours: Mon-Fri 09:15-15:30 IST
-        trading_data = data[
-            (data.index.weekday < 5) &  # Mon-Fri
-            (
-                ((data.index.hour > 9) | ((data.index.hour == 9) & (data.index.minute >= 15))) &
-                ((data.index.hour < 15) | ((data.index.hour == 15) & (data.index.minute <= 30)))
-            )
-        ]
-        if target_trading_days:
+        # Asset-aware filter
+        is_nse = symbol.endswith('.NS') or symbol.startswith('^NSE')
+        if is_nse:
+            # Strict NSE Trading Hours: Mon-Fri 09:15-15:30 IST
+            trading_data = data[
+                (data.index.weekday < 5) &  # Mon-Fri
+                (
+                    ((data.index.hour > 9) | ((data.index.hour == 9) & (data.index.minute >= 15))) &
+                    ((data.index.hour < 15) | ((data.index.hour == 15) & (data.index.minute <= 30)))
+                )
+            ]
+        else:
+            trading_data = data  # Full for crypto/NASDAQ
+            print(f"Full data (24/7 or market hours) for {symbol}")
+
+        if target_trading_days and is_nse:
             # Get last N unique trading days
             trading_days = trading_data.index.normalize().unique()[-target_trading_days:]
             trading_data = trading_data[trading_data.index.normalize().isin(trading_days)]
@@ -47,12 +54,15 @@ def generate_chart(symbol, period='1mo', interval='1d', target_trading_days=None
         import mplfinance as mpf
         mc = mpf.make_marketcolors(up='g', down='r', inherit=True)
         s = mpf.make_mpf_style(marketcolors=mc)
+        tz_label = 'IST' if is_nse else 'UTC'
+        title_suffix = '- Trading Hours IST' if is_nse else '- Full Period UTC'
+        ylabel = 'Price (₹)' if is_nse else 'Price ($ USD)'
         fig, axlist = mpf.plot(trading_data, 
                                type='candle',
                                style=s,
                                volume=False,
-                               title=f'{symbol} {period.upper()} ({interval}) - Trading Hours IST',
-                               ylabel='Price (₹)',
+                               title=f'{symbol} {period.upper()} ({interval}) {title_suffix}',
+                               ylabel=ylabel,
                                figsize=(14,8),
                                returnfig=True,
                                datetime_format='%d-%m %H:%M' if interval in ['1m','5m','15m','30m','60m','1h'] else '%d-%m-%Y')

@@ -73,15 +73,16 @@ def ask_ai_natural(user_input, history=None):
         query = re.sub(r'\?', '', user_input)  # Clean query
         stock_name = None
         stock_ticker = None
-        for name in STOCK_MAP:
-            if name in text_lower:
+        for name in NIFTY500_MAP:
+            short_name = name.split()[0].lower()
+            if short_name in words:
                 stock_name = name.title()
-                stock_ticker = STOCK_MAP[name]
+                stock_ticker = NIFTY500_MAP[name]
                 break
         precise_query = f"{stock_name} {query}" if stock_name else query
 
         if stock_ticker:
-            from tools.realtime import get_stock_news
+            from modules.trading.tools.realtime import get_stock_news
             yahoo_news = get_stock_news(stock_ticker)
             if yahoo_news:
                 context += yahoo_news

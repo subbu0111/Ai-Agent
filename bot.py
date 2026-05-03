@@ -4,10 +4,10 @@ import asyncio
 
 from config import TELEGRAM_TOKEN, ALLOWED_USER_IDS
 from ai_client import ask_ai_natural
-from tasks.reminder import set_reminder
-from tasks.executor import run_command
-from tasks.realtime_monitor import track_asset
-import tasks.alerts as alerts
+from modules.trading.tasks.reminder import set_reminder
+from modules.trading.tasks.executor import run_command
+from modules.trading.tasks.realtime_monitor import track_asset
+import modules.trading.tasks.alerts as alerts
 chat_history = {}  # Short-term: per-user messages
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -28,12 +28,74 @@ def safe_reply(text):
     return text
 
 
+import json
+import os
+from modules.news_alerts.tasks.news_monitor import proactive_news, start_proactive
+
+proactive_tasks = {}  # user_id: task
+watchlists_file = 'data/watchlists.json'
+
+def load_watchlists():
+    if os.path.exists(watchlists_file):
+        with open(watchlists_file, 'r') as f:
+            return json.load(f)
+    return {}
+
+def save_watchlists(data):
+    with open(watchlists_file, 'w') as f:
+        json.dump(data, f)
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not check_access(update):
         return
 
-    text = update.message.text.lower()
+    text_lower = update.message.text.lower()
+    text = text_lower
     print("Incoming:", text)
+
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+
+    # 🆕 MODULAR ROUTER + PROACTIVE
+    watchlists = load_watchlists()
+
+    if text_lower.startswith('start alerts'):
+        interests = text_lower.replace('start alerts', '').strip().split() or ['deals', 'news']
+        watchlists[str(user_id)] = {'alerts': interests}
+        save_watchlists(watchlists)
+        task = asyncio.create_task(proactive_news(chat_id, context, interests))
+        proactive_tasks[str(user_id)] = task
+        await update.message.reply_text(f"🚨 Proactive alerts started for: {', '.join(interests)}")
+        return
+
+    if text_lower.startswith('watch '):
+        items = text_lower.replace('watch ', '').strip().split()
+        if str(user_id) not in watchlists:
+            watchlists[str(user_id)] = {}
+        watchlists[str(user_id)]['watch'] = items
+        save_watchlists(watchlists)
+        await update.message.reply_text(f"👀 Watchlist: {', '.join(items)}")
+        return
+
+    if text_lower.startswith('stop alerts'):
+        if str(user_id) in proactive_tasks:
+            proactive_tasks[str(user_id)].cancel()
+            del proactive_tasks[str(user_id)]
+        await update.message.reply_text("🛑 Alerts stopped.")
+        return
+
+    # Route modules
+    if any(kw in text_lower for kw in ['stock', 'nifty', 'chart', 'price', 'alert', 'track', 'btc', 'nasdaq']):
+        # Trading module (existing logic follows)
+        pass
+    elif any(kw in text_lower for kw in ['news', 'deal', 'breaking']):
+        from modules.trading.tools.search import get_news
+        news = get_news(text_lower.replace('news ', ''), timelimit='d')
+        await update.message.reply_text(news or "No recent news.")
+        return
+    else:
+        # General: always LLM + search
+        pass
 
     # ⚙️ RUN COMMAND
     if text.startswith("alert "):
@@ -94,16 +156,45 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # 📊 CHARTS
     if any(word in text_lower for word in ['chart', 'graph', 'plot']):
-        from tools.charts import generate_chart
-        from nifty500 import NIFTY500_MAP
+        from modules.trading.tools.charts import generate_chart
+        from modules.trading.nifty500 import NIFTY500_MAP
         words = [w.lower() for w in text_lower.split()]
-        symbol_name = None
-        for name in NIFTY500_MAP:
-            short_name = name.split()[0].lower()
-            if short_name in words:
-                symbol_name = name
+        
+        # Crypto first
+        CRYPTO_MAP = {'bitcoin': 'BTC-USD', 'btc': 'BTC-USD', 'ethereum': 'ETH-USD', 'eth': 'ETH-USD'}
+        symbol = None
+        for kw, sym in CRYPTO_MAP.items():
+            if kw in words:
+                symbol = sym
                 break
-        symbol = NIFTY500_MAP.get(symbol_name, '^NSEI')
+        
+        # NASDAQ
+        if not symbol:
+            NASDAQ_MAP = {
+                'nasdaq': '^IXIC',
+                'apple': 'AAPL', 'aapl': 'AAPL',
+                'microsoft': 'MSFT', 'msft': 'MSFT',
+                'nvidia': 'NVDA', 'nvda': 'NVDA',
+                'amazon': 'AMZN', 'amzn': 'AMZN',
+                'google': 'GOOGL', 'alphabet': 'GOOGL',
+                'tesla': 'TSLA', 'tsla': 'TSLA',
+                'meta': 'META', 'facebook': 'META'
+            }
+            for kw, sym in NASDAQ_MAP.items():
+                if kw in words:
+                    symbol = sym
+                    break
+        
+        # Nifty 500
+        if not symbol:
+            symbol_name = None
+            for name in NIFTY500_MAP:
+                short_name = name.split()[0].lower()
+                if short_name in words:
+                    symbol_name = name
+                    break
+            symbol = NIFTY500_MAP.get(symbol_name, '^NSEI')
+        
         import re
         # Interval parse
         int_match = re.search(r'(\d+)\s*(minutes?|min|hours?|h|days?|d)', text_lower, re.I)
@@ -178,7 +269,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 period = '2y'
         buffer = generate_chart(symbol, period, interval, target_trading_days=target_days)
         if buffer:
-            caption = f"📊 {symbol} {period.upper()} ({interval}) - Last {target_days or ''} Trading Days IST"
+            is_nse = symbol.endswith('.NS') or symbol.startswith('^NSE')
+            is_crypto = '-USD' in symbol
+            suffix = 'Trading Hours IST' if is_nse else ('24/7 UTC' if is_crypto else 'NASDAQ/Full')
+            caption = f"📊 {symbol} {period.upper()} ({interval}) - {suffix} - Last {target_days or ''} Days"
             await update.message.reply_photo(photo=buffer, caption=caption)
         else:
             await update.message.reply_photo(photo=buffer, caption=f"❌ Chart failed for {symbol} {period} ({interval})")

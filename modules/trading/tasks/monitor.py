@@ -1,5 +1,5 @@
 import asyncio
-from tools.search import search_web
+from modules.trading.tools.search import search_web
 
 async def monitor_task(context, chat_id):
     while True:

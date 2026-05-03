@@ -1,5 +1,5 @@
 import asyncio
-from tools.realtime import get_stock_price
+from modules.trading.tools.realtime import get_stock_price
 
 async def monitor_price(asset, threshold, context, chat_id):
     while True:

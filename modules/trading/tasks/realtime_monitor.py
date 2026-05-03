@@ -1,5 +1,5 @@
 import asyncio
-from tools.realtime import get_crypto_price, get_stock_price
+from modules.trading.tools.realtime import get_crypto_price, get_stock_price
 
 async def track_asset(context, chat_id, asset):
     last = None

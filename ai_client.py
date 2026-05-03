@@ -1,8 +1,8 @@
 import requests
 from config import OPENROUTER_API_KEY, MODEL
-from tools.realtime import get_crypto_price, get_stock_price
-from tools.search import get_news, get_date, search_web
-from nifty500 import NIFTY500_MAP
+from modules.trading.tools.realtime import get_crypto_price, get_stock_price
+from modules.trading.tools.search import get_news, get_date, search_web
+from modules.trading.nifty500 import NIFTY500_MAP
 
 import re
 
